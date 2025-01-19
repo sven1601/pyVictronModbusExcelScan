@@ -1,0 +1,7 @@
+com.victronenergy.grid,41
+com.victronenergy.battery,229
+com.victronenergy.solarcharger,230
+com.victronenergy.system,100
+com.victronenergy.vebus,228
+com.victronenergy.hub4,100
+com.victronenergy.acload,30
