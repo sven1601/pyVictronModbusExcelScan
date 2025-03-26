@@ -19,5 +19,5 @@ Pre Operational dependencies:
 - Victron Excel Sheet (normally downloaded by the script at the beginning)
 - User acces to the Victron GX device via modbus tcp in the same subnet, yol'll need the IP address
 
-Then start scanning :)
+Then start scanning :)<br>
 Tested with the latest Victron CCGX Modbus register list (Rev 50) and python 3.13.2
