@@ -8,6 +8,9 @@ from pymodbus.client import ModbusTcpClient as ModbusClient
 from pymodbus.payload import BinaryPayloadDecoder
 import math
 import numpy as np
+import logging
+
+logging.basicConfig(level=logging.CRITICAL)
 
 colCharSize_index = 10
 colCharSize_registerOverviewIndex = 10
@@ -18,27 +21,13 @@ colCharSize_registerDbusObjPath = 60
 colCharSize_value = 20
 registerOverviewPagesEntryCount = 30
 victronExcelFileHeaderRowIndexNumber = 1
-baseStr = "modbus:\n  - name: victron\n    type: tcp\n    host: x.x.x.x\n    port: 502\n    sensors:"
 fileURL = "https://raw.githubusercontent.com/victronenergy/dbus_modbustcp/master/CCGX-Modbus-TCP-register-list.xlsx"
 fileTarget = "ModbusRegisterList.xlsx"
+registerListFile = "myVictronModbusRegisters.txt"
 spaces = '      '
-
-# Local network ip address of Cerbo GX. Default port 502
-client = ModbusClient('XXX.XXX.XXX.XXX', port=502)
+client = ''
 
 def cls(): os.system('cls' if os.name=='nt' else 'clear')
-
-def getModbusExceptionStr(exceptionCode: int):
-    if exceptionCode == 1:
-        return "IllegalFunction"
-    elif exceptionCode == 2:
-        return "IllegalDataAddress"
-    elif exceptionCode == 3:
-        return "IllegalDataValue"
-    elif exceptionCode == 4:
-        return "GatewayPathUnavailable"
-    elif exceptionCode == 5:
-        return "GatewayTargetDeviceFailedToRespond"
 
 def fillStringUpWithSpaces(inputStr: str, size: int) -> str:
     tmpStr = inputStr
@@ -72,49 +61,67 @@ def getAllCellValuesFromColumn(xlsxDict: dict, colName: str):
 
 def modbus_register_uint16(address, unit, factor: float):
     try:
-        msg1     = client.read_holding_registers(address, slave=unit)
-        decoder = BinaryPayloadDecoder.fromRegisters(msg1.registers, byteorder=Endian.BIG)
-        msg2     = decoder.decode_16bit_uint() / factor
-        return msg2
+        msg1 = client.read_holding_registers(address, slave=unit)     
     except Exception as error:
-        return "ERROR: " + str(getModbusExceptionStr(msg1.exception_code))
+        return "ERROR: Internal pymodbus exception ==> Code " + str(msg1.exception_code)
+
+    if msg1.isError():
+        return "ERROR: Reading Register"
+    else:
+        decoder = client.convert_from_registers(msg1.registers, word_order='big', data_type=client.DATATYPE.UINT16)
+        msg2 = decoder / factor
+        return msg2
 
 def modbus_register_uint32(address, unit, factor: float):
     try:
-        msg1     = client.read_holding_registers(address, count=4, slave=unit)
-        decoder = BinaryPayloadDecoder.fromRegisters(msg1.registers, byteorder=Endian.BIG)
-        msg2     = decoder.decode_32bit_uint() / factor
-        return msg2
+        msg1 = client.read_holding_registers(address, count=2, slave=unit)
     except Exception as error:
-        return "ERROR: " + str(getModbusExceptionStr(msg1.exception_code))
+        return "ERROR: Internal pymodbus exception ==> Code " + str(msg1.exception_code)
+    
+    if msg1.isError():
+        return "ERROR: Reading Register"
+    else:
+        decoder = client.convert_from_registers(msg1.registers, word_order='big', data_type=client.DATATYPE.UINT32)
+        msg2 = decoder / factor
+        return msg2
         
 def modbus_register_int16(address, unit, factor: float):
     try:
-        msg1     = client.read_holding_registers(address, slave=unit)
-        decoder = BinaryPayloadDecoder.fromRegisters(msg1.registers, byteorder=Endian.BIG)
-        msg2     = decoder.decode_16bit_int() / factor
-        return msg2
+        msg1 = client.read_holding_registers(address, slave=unit)
     except Exception as error:
-        return "ERROR: " + str(getModbusExceptionStr(msg1.exception_code))
+        return "ERROR: Internal pymodbus exception ==> Code " + str(msg1.exception_code)
+    
+    if msg1.isError():
+        return "ERROR: Reading Register"
+    else:
+        decoder = client.convert_from_registers(msg1.registers, word_order='big', data_type=client.DATATYPE.INT16)
+        msg2 = decoder / factor
+        return msg2
 
 def modbus_register_int32(address, unit, factor: float):
     try:
-        msg1     = client.read_holding_registers(address, count=4, slave=unit)
-        decoder = BinaryPayloadDecoder.fromRegisters(msg1.registers, byteorder=Endian.BIG)
-        msg2     = decoder.decode_32bit_int() / factor
-        return msg2
-    
+        msg1 = client.read_holding_registers(address, count=2, slave=unit)
     except Exception as error:
-        return "ERROR: " + str(getModbusExceptionStr(msg1.exception_code))
+        return "ERROR: Internal pymodbus exception ==> Code " + str(msg1.exception_code)
+        
+    if msg1.isError():
+        return "ERROR: Reading Register"
+    else:
+        decoder = client.convert_from_registers(msg1.registers, word_order='big', data_type=client.DATATYPE.INT32)
+        msg2 = decoder / factor
+        return msg2    
         
 def modbus_register_string(address, byteCount, unit):
     try:
-        msg1     = client.read_holding_registers(address, byteCount, slave=unit)
-        decoder = BinaryPayloadDecoder.fromRegisters(msg1.registers, byteorder=Endian.BIG)
-        msg2     = decoder.decode_string(byteCount*2)
-        return str(msg2).replace("\\x00", "")
+        msg1 = client.read_holding_registers(address, count=byteCount, slave=unit)
     except Exception as error:
-        return "ERROR" + str(error)
+        return "ERROR: Internal pymodbus exception ==> Code " + str(msg1.exception_code)
+
+    if msg1.isError():
+        return "ERROR: Reading Register"
+    else:
+        decoder = client.convert_from_registers(msg1.registers, word_order='big', data_type=client.DATATYPE.STRING)
+        return str(decoder).replace("\\x00", "")    
 
 def strRemoveAllRepeatingWhitespaces(inputStr):
     return " ".join(inputStr.split())
@@ -136,8 +143,20 @@ def createDictFromFile(filename: str):
             dictionary[key] = value
     return dictionary
 
+def checkIPformat(ipStr):
+    a = ipStr.split('.')
+    if len(a) != 4:
+        return False
+    for x in a:
+        if not x.isdigit():
+            return False
+        i = int(x)
+        if i < 0 or i > 255:
+            return False
+    return True
 
 def main():
+    global client
     cls()
     print("----------------------------------------------------------------------------------------------------------------------------")
     print("Welcome to the Victron GX Modbus Register Converter for Homeassistant configuration.yaml")
@@ -151,7 +170,7 @@ def main():
             r = requests.get(fileURL, allow_redirects=True)
             open(fileTarget, 'wb').write(r.content)
             filepath = "./" + fileTarget
-            print("File download successful")
+            print("File download successful, file: " + fileTarget)
             fileValidFlag = True
         except:
             print("Something went wrong while loading the file, aborting the script.")
@@ -167,6 +186,12 @@ def main():
             else:
                 print("Ok, the specified file is valid")
                 fileValidFlag = True
+    
+    ipStr = input("Please enter the IP address of your Victron Modbus Server (Cerbo GX): ")
+    if checkIPformat(ipStr) != True:
+        exit(-3)
+
+    client = ModbusClient(ipStr, port=502)
 
     dict_complete = parseExcelToDict(filepath, 'Field list', victronExcelFileHeaderRowIndexNumber)
     dict_names = getAllCellValuesFromColumn(dict_complete, 'description')
@@ -178,10 +203,12 @@ def main():
     list_serviceNamesSelected = []
     countEntries = len(dict_names)
 
-
     print("I have found " + str(countEntries) + " registers in the list")
 
-    serviceDict = createDictFromFile('myVictronModbusRegisters.txt')
+    if os.path.exists(registerListFile) != True:
+        exit(-4)
+
+    serviceDict = createDictFromFile(registerListFile)
 
     output = ""
     print(fillStringUpWithSpaces("Index:", colCharSize_index) +
